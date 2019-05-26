@@ -1,3 +1,5 @@
+# Original code graciously provided by Stack Overflow user David Hefferman
+
 import sys
 import time
 import ctypes
@@ -64,8 +66,6 @@ counter = 0
 while user32.GetMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
     user32.TranslateMessageW(msg)
     user32.DispatchMessageW(msg)
-
-
 
 user32.UnhookWinEvent(hook)
 ole32.CoUninitialize()
