@@ -5,9 +5,17 @@ import sys
 import time
 import ctypes
 import ctypes.wintypes
+import threading
+from win32 import win32api
 
 EVENT_OBJECT_FOCUS = 0x8005
 WINEVENT_OUTOFCONTEXT = 0x0000
+
+# Preferential constants
+AFK_TIMEOUT = 5 * 60 # How long in seconds the user must be inactive (no mouse/keyboard input) for the user to be considered afk
+
+idle_thread = threading.Thread() # Thread to run the afk check
+last_input_previous = win32api.GetTickCount() # Previous value of GetLastInputInfo()
 
 time_log = {} # The number of seconds spent on each window, using changes in window focus
 
@@ -31,6 +39,27 @@ WinEventProcType = ctypes.WINFUNCTYPE(
     ctypes.wintypes.DWORD
 )
 
+
+# Periodically check if the user's idle time exceeds afk_timeout, and removes this idle time from the
+# focused application's use time if so
+def idle_check():
+    global idle_thread
+    global last_input_previous
+    global last_time
+    last_input = win32api.GetLastInputInfo()
+    # Check the gap between the most recent input and the input immediately before it 
+    if (last_input - last_input_previous) / 1000.0 > AFK_TIMEOUT:
+        last_time = int(time.time())
+        print("Welcome back! We decided you were afk.")
+    idle_time = (win32api.GetTickCount() - win32api.GetLastInputInfo()) / 1000.0
+    last_input_previous = win32api.GetLastInputInfo()
+    # Restart the timer for another update cycle
+    idle_thread = threading.Timer(10.0, idle_check)
+    idle_thread.start()
+
+idle_thread = threading.Timer(10.0, idle_check)
+idle_thread.start()
+
 def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
     global num_updates
     global last_window
@@ -50,12 +79,13 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
         last_window = name
         if num_updates == 30: 
             writeData(time_log)
+            idle_thread.cancel()
             quit()
         num_updates += 1
 
 def readData(time_log):
     date_string = time.strftime('%d-%m-%Y')
-    with open(date_string + '.csv', "r+") as dataFile:
+    with open(date_string + '.csv', "w+") as dataFile:
         lines = csv.reader(dataFile)
         for line in lines:
             if len(line) > 0:
@@ -67,7 +97,7 @@ def writeData(time_log):
     log_list = [[key, val] for key, val in time_log.items()] # Convert dict to list
     log_list = sorted(log_list, key = lambda app:(-int(app[1]), app[0]))
     date_string = time.strftime('%d-%m-%Y')
-    with open(date_string + '.csv', 'w+', newline = '') as dataFile:
+    with open(date_string + '.csv', 'w', newline = '') as dataFile:
         out = csv.writer(dataFile)
         out.writerows(log_list)
 
