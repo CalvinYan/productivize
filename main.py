@@ -68,7 +68,7 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
     buff = ctypes.create_string_buffer(length + 1)
     user32.GetWindowTextA(hwnd, buff, length + 1)
     name = str(buff.value, 'windows-1252')
-    if name != '':
+    if name != '' and name != last_window:
         new_time = int(time.time())
         print(time.strftime('%X') + ' --> ' + name)
         if (last_time != 0):
@@ -85,11 +85,14 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
 
 def readData(time_log):
     date_string = time.strftime('%d-%m-%Y')
-    with open(date_string + '.csv', "w+") as dataFile:
+    # Python's default access modes don't allow us to open the file for reading, create it if it doesn't
+    # exist, don't truncate it, and start from the top, so a combination of modes is required
+    with open(date_string + '.csv', "a") as dataFile: # Create if not exist
+        pass
+    with open(date_string + '.csv', "r") as dataFile: # Read, don't truncate, start from top
         lines = csv.reader(dataFile)
         for line in lines:
             if len(line) > 0:
-                print(line)
                 time_log[line[0]] = int(line[1])
 
 # Update the total record of time spent on each application
