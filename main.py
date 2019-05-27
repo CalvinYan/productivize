@@ -12,7 +12,7 @@ EVENT_OBJECT_FOCUS = 0x8005
 WINEVENT_OUTOFCONTEXT = 0x0000
 
 # Preferential constants
-AFK_TIMEOUT = 5 * 60 # How long in seconds the user must be inactive (no mouse/keyboard input) for the user to be considered afk
+AFK_TIMEOUT = 2 * 60 # How long in seconds the user must be inactive (no mouse/keyboard input) for the user to be considered afk
 
 idle_thread = threading.Thread() # Thread to run the afk check
 last_input_previous = win32api.GetTickCount() # Previous value of GetLastInputInfo()
@@ -78,9 +78,7 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
         last_time = new_time
         last_window = name
         if num_updates == 30: 
-            writeData(time_log)
-            idle_thread.cancel()
-            quit()
+            onExit()
         num_updates += 1
 
 def readData(time_log):
@@ -108,6 +106,12 @@ def writeData(time_log):
 def updateLog(time_log, app_name, seconds):
     current_value = time_log[app_name] if app_name in time_log else 0
     time_log[app_name] = current_value + seconds
+
+# All tasks that must be performed before the program closes
+def onExit():
+    writeData(time_log)
+    idle_thread.cancel()
+    quit()
 
 readData(time_log)
 
