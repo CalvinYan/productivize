@@ -46,13 +46,19 @@ def idle_check():
     global idle_thread
     global last_input_previous
     global last_time
+
     last_input = win32api.GetLastInputInfo()
     # Check the gap between the most recent input and the input immediately before it 
     if (last_input - last_input_previous) / 1000.0 > AFK_TIMEOUT:
         last_time = int(time.time())
         print("Welcome back! We decided you were afk.")
-    idle_time = (win32api.GetTickCount() - win32api.GetLastInputInfo()) / 1000.0
-    last_input_previous = win32api.GetLastInputInfo()
+    last_input_previous = last_input
+    # Since we're here, we might as well check if this is the last update cycle before the date changes
+    # and call onDateChange(). Code reformatting may be necessary
+    hour_minute = time.strftime('%H:%M')
+    num_seconds = int(time.strftime('%S'))
+    if hour_minute == "23:59" and num_seconds + 10.0 >= 60:
+        onDateChange(time_log, last_window, last_time, last_input)
     # Restart the timer for another update cycle
     idle_thread = threading.Timer(10.0, idle_check)
     idle_thread.start()
@@ -106,6 +112,19 @@ def writeData(time_log):
 def updateLog(time_log, app_name, seconds):
     current_value = time_log[app_name] if app_name in time_log else 0
     time_log[app_name] = current_value + seconds
+
+# All tasks that must be performed before the date changes at 12:00 AM
+def onDateChange(time_log, last_window, last_time, last_input):
+    print("Yeetimus")
+    current_time = int(time.time())
+    # Account for the possibility of being in/recently out of afk
+    if current_time - last_time <= AFK_TIMEOUT:
+        updateLog(time_log, last_window, current_time - last_time)
+    elif current_time - last_input <= AFK_TIMEOUT:
+        updateLog(time_log, last_window, current_time - last_input)
+    writeData(time_log)
+    time_log = {}
+
 
 # All tasks that must be performed before the program closes
 def onExit():
