@@ -66,10 +66,10 @@ def idle_check():
     # if hour_minute == "23:59" and num_seconds + 10.0 >= 60:
     #     onDateChange(time_log, last_window, last_time, last_input)
     # Restart the timer for another update cycle
-    idle_thread = threading.Timer(10.0, idle_check)
+    idle_thread = threading.Timer(0.1, idle_check)
     idle_thread.start()
 
-idle_thread = threading.Timer(10.0, idle_check)
+idle_thread = threading.Timer(0.1, idle_check)
 idle_thread.start()
 
 def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
