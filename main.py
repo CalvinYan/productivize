@@ -19,6 +19,10 @@ AFK_TIMEOUT = 2 * 60 # How long in seconds the user must be inactive (no mouse/k
 idle_thread = threading.Thread() # Thread to run the afk check
 last_input_previous = win32api.GetTickCount() # Previous value of GetLastInputInfo()
 
+# The number of seconds representing the last second of the day - used for end-of-day autosave
+LAST_SECOND = 23 * 3600 + 59 * 60 + 59
+date_change_thread = threading.Thread()
+
 time_log = {} # The number of seconds spent on each window, using changes in window focus
 
 num_updates = 0
@@ -57,10 +61,10 @@ def idle_check():
     last_input_previous = last_input
     # Since we're here, we might as well check if this is the last update cycle before the date changes
     # and call onDateChange(). Code reformatting may be necessary
-    hour_minute = time.strftime('%H:%M')
-    num_seconds = int(time.strftime('%S'))
-    if hour_minute == "23:59" and num_seconds + 10.0 >= 60:
-        onDateChange(time_log, last_window, last_time, last_input)
+    # hour_minute = time.strftime('%H:%M')
+    # num_seconds = int(time.strftime('%S'))
+    # if hour_minute == "23:59" and num_seconds + 10.0 >= 60:
+    #     onDateChange(time_log, last_window, last_time, last_input)
     # Restart the timer for another update cycle
     idle_thread = threading.Timer(10.0, idle_check)
     idle_thread.start()
@@ -116,8 +120,10 @@ def updateLog(time_log, app_name, seconds):
     time_log[app_name] = current_value + seconds
 
 # All tasks that must be performed before the date changes at 12:00 AM
-def onDateChange(time_log, last_window, last_time, last_input):
+def onDateChange():
+    global time_log
     print("Yeetimus")
+    last_input = int(win32api.GetLastInputInfo()/1000)
     current_time = int(time.time())
     # Account for the possibility of being in/recently out of afk
     if current_time - last_time <= AFK_TIMEOUT:
@@ -132,14 +138,19 @@ def onDateChange(time_log, last_window, last_time, last_input):
 def onExit():
     writeData(time_log)
     idle_thread.cancel()
+    date_change_thread.cancel()
     quit()
 
 readData(time_log)
 
+# Set timer to call onDateChange on the last second of the day
+current_seconds = int(time.strftime("%H")) * 3600 + int(time.strftime("%M")) * 60 + int(time.strftime("%S"))
+date_change_thread = threading.Timer(LAST_SECOND - current_seconds, onDateChange)
+date_change_thread.start()
 WinEventProc = WinEventProcType(callback)
 
 user32.SetWinEventHook.restype = ctypes.wintypes.HANDLE
-hook = user32.SetWinEventHook(
+hook_focus = user32.SetWinEventHook(
     EVENT_OBJECT_FOCUS,
     EVENT_OBJECT_FOCUS,
     0,
@@ -148,7 +159,7 @@ hook = user32.SetWinEventHook(
     0,
     WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
 )
-hook = user32.SetWinEventHook(
+hook_namechange = user32.SetWinEventHook(
     EVENT_OBJECT_NAMECHANGE,
     EVENT_OBJECT_NAMECHANGE,
     0,
@@ -158,7 +169,7 @@ hook = user32.SetWinEventHook(
     WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
 )
 
-if hook == 0:
+if hook_focus == 0 or hook_namechange == 0:
     print('SetWinEventHook failed')
     sys.exit(1)
 
@@ -169,5 +180,6 @@ while user32.GetMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
     user32.TranslateMessageW(msg)
     user32.DispatchMessageW(msg)
 
-user32.UnhookWinEvent(hook)
+user32.UnhookWinEvent(hook_focus)
+user32.UnhookWinEvent(hook_namechange)
 ole32.CoUninitialize()
