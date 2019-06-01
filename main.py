@@ -6,10 +6,12 @@ import time
 import ctypes
 import ctypes.wintypes
 import threading
-from win32 import win32api
+from win32 import win32api, win32gui
 
 EVENT_OBJECT_FOCUS = 0x8005
+EVENT_OBJECT_NAMECHANGE = 0x800C
 WINEVENT_OUTOFCONTEXT = 0x0000
+WINEVENT_SKIPOWNPROCESS = 0x0002
 
 # Preferential constants
 AFK_TIMEOUT = 2 * 60 # How long in seconds the user must be inactive (no mouse/keyboard input) for the user to be considered afk
@@ -74,7 +76,7 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
     buff = ctypes.create_string_buffer(length + 1)
     user32.GetWindowTextA(hwnd, buff, length + 1)
     name = str(buff.value, 'windows-1252')
-    if name != '' and name != last_window:
+    if name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()):
         new_time = int(time.time())
         print(time.strftime('%X') + ' --> ' + name)
         if (last_time != 0):
@@ -144,7 +146,16 @@ hook = user32.SetWinEventHook(
     WinEventProc,
     0,
     0,
-    WINEVENT_OUTOFCONTEXT
+    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
+)
+hook = user32.SetWinEventHook(
+    EVENT_OBJECT_NAMECHANGE,
+    EVENT_OBJECT_NAMECHANGE,
+    0,
+    WinEventProc,
+    0,
+    0,
+    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
 )
 
 if hook == 0:
