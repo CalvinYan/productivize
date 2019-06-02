@@ -99,7 +99,7 @@ def readData(time_log):
     # exist, don't truncate it, and start from the top, so a combination of modes is required
     with open(date_string + '.csv', "a") as dataFile: # Create if not exist
         pass
-    with open(date_string + '.csv', "r") as dataFile: # Read, don't truncate, start from top
+    with open(date_string + '.csv', "r", encoding = "utf-8") as dataFile: # Read, don't truncate, start from top
         lines = csv.reader(dataFile)
         for line in lines:
             if len(line) > 0:
@@ -110,7 +110,7 @@ def writeData(time_log):
     log_list = [[key, val] for key, val in time_log.items()] # Convert dict to list
     log_list = sorted(log_list, key = lambda app:(-int(app[1]), app[0]))
     date_string = time.strftime('%d-%m-%Y')
-    with open(date_string + '.csv', 'w', newline = '') as dataFile:
+    with open(date_string + '.csv', 'w', newline = '', encoding = 'utf-8') as dataFile:
         out = csv.writer(dataFile)
         out.writerows(log_list)
 
