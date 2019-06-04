@@ -56,8 +56,13 @@ def idle_check():
     last_input = win32api.GetLastInputInfo()
     # Check the gap between the most recent input and the input immediately before it 
     if (last_input - last_input_previous) / 1000.0 > AFK_TIMEOUT:
-        last_time = int(time.time())
-        print("Welcome back! We decided you were afk.")
+        # If a gap in input exceeds our afk threshold, we "exclude" this gap by prematurely
+        # adding the time before the gap to the current application and moving the last_time
+        # pointer to the most recent input
+        time_before_afk = int(last_input_previous / 1000) - last_time
+        updateLog(time_log, last_window, time_before_afk)
+        last_time = int(win32api.GetTickCount() / 1000)
+        print("Welcome back! We decided you were afk after %d seconds of activity" % (time_before_afk))
     last_input_previous = last_input
     # Since we're here, we might as well check if this is the last update cycle before the date changes
     # and call onDateChange(). Code reformatting may be necessary
@@ -81,7 +86,7 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
     user32.GetWindowTextA(hwnd, buff, length + 1)
     name = str(buff.value, 'windows-1252')
     if name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()):
-        new_time = int(time.time())
+        new_time = int(win32api.GetTickCount() / 1000)
         print(time.strftime('%X') + ' --> ' + name)
         if (last_time != 0):
             time_delta = new_time - last_time
@@ -124,7 +129,7 @@ def onDateChange():
     global time_log
     print("Yeetimus")
     last_input = int(win32api.GetLastInputInfo()/1000)
-    current_time = int(time.time())
+    current_time = int(win32api.GetTickCount() / 1000)
     # Account for the possibility of being in/recently out of afk
     if current_time - last_time <= AFK_TIMEOUT:
         updateLog(time_log, last_window, current_time - last_time)
