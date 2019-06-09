@@ -6,8 +6,9 @@ import time
 import ctypes
 import ctypes.wintypes
 import threading
-from win32 import win32api, win32gui
+from win32 import win32api, win32gui, win32process
 import win32con
+import psutil
 
 # Preferential constants
 AFK_TIMEOUT = 2 * 60 # How long in seconds the user must be inactive (no mouse/keyboard input) for the user to be considered afk
@@ -56,7 +57,8 @@ def idle_check():
         # adding the time before the gap to the current application and moving the last_time
         # pointer to the most recent input
         time_before_afk = int(last_input_previous / 1000) - last_time
-        updateLog(time_log, last_window, time_before_afk)
+        app_name = getAppName()
+        updateLog(time_log, app_name, last_window, time_before_afk)
         last_time = int(win32api.GetTickCount() / 1000)
         print("Welcome back! We decided you were afk after %d seconds of activity" % (time_before_afk))
     last_input_previous = last_input
@@ -83,16 +85,23 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
     name = buff.value
     if name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()):
         new_time = int(win32api.GetTickCount() / 1000)
+        app_name = getAppName()
+        print(app_name)
         print(time.strftime('%X') + ' --> ' + name)
         if (last_time != 0):
             time_delta = new_time - last_time
-            updateLog(time_log, last_window, time_delta)
+            updateLog(time_log, app_name, last_window, time_delta)
             print(str(time_delta) + ' seconds have elapsed')
         last_time = new_time
         last_window = name
         if num_updates == 30: 
             onExit()
         num_updates += 1
+
+def getAppName():
+    _, processID = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
+    app_name = psutil.Process(processID).name()
+    return app_name
 
 def readData(time_log):
     date_string = time.strftime('%d-%m-%Y')
@@ -104,21 +113,30 @@ def readData(time_log):
         lines = csv.reader(dataFile)
         for line in lines:
             if len(line) > 0:
-                time_log[line[0]] = int(line[1])
+                [app_name, window_name, seconds] = line
+                updateLog(time_log, app_name, window_name, int(seconds))
 
-# Update the total record of time spent on each application
+# Update the total record of time spent on each application-window combination
 def writeData(time_log):
-    log_list = [[key, val] for key, val in time_log.items()] # Convert dict to list
-    log_list = sorted(log_list, key = lambda app:(-int(app[1]), app[0]))
+    log_list = []
+    # Convert dict to list
+    for app_name, windows in time_log.items():
+        for window_name, seconds in windows.items():
+            log_list.append([app_name, window_name, str(seconds)])
+    log_list = sorted(log_list, key = lambda app:(-int(app[2]), app[1], app[0]))
     date_string = time.strftime('%d-%m-%Y')
     with open(date_string + '.csv', 'w', newline = '', encoding = 'utf-8') as dataFile:
         out = csv.writer(dataFile)
         out.writerows(log_list)
 
-# Add the number of seconds spent using an application to its total duration, or add it if necessary
-def updateLog(time_log, app_name, seconds):
-    current_value = time_log[app_name] if app_name in time_log else 0
-    time_log[app_name] = current_value + seconds
+# Add the number of seconds spent on an application-window combination to its total duration, or add it if necessary
+def updateLog(time_log, app_name, window_name, seconds):
+    if app_name in time_log:
+        current_value = time_log[app_name][window_name] if window_name in time_log[app_name] else 0
+        time_log[app_name][window_name] = current_value + seconds
+    else:
+        # Create a new dictionary corresponsing to the application in question      
+        time_log[app_name] = {window_name: seconds}
 
 # All tasks that must be performed before the date changes at 12:00 AM
 def onDateChange():
