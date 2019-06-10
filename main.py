@@ -14,6 +14,7 @@ import psutil
 AFK_TIMEOUT = 2 * 60 # How long in seconds the user must be inactive (no mouse/keyboard input) for the user to be considered afk
 
 idle_thread = threading.Thread() # Thread to run the afk check
+afk_state = False # Has the system not received an input for longer than the timeout?
 last_input_previous = win32api.GetTickCount() # Previous value of GetLastInputInfo()
 
 # The number of seconds representing the last second of the day - used for end-of-day autosave
@@ -23,6 +24,7 @@ date_change_thread = threading.Thread()
 time_log = {} # The number of seconds spent on each window, using changes in window focus
 
 num_updates = 0
+last_app = '' # The name of the application used prior to window switch
 last_window = '' # The name of the recently unfocused window
 last_time = 0 # integer timestamp of the last change in focus
 
@@ -43,25 +45,28 @@ WinEventProcType = ctypes.WINFUNCTYPE(
 )
 
 
-# Periodically check if the user's idle time exceeds afk_timeout, and removes this idle time from the
-# focused application's use time if so
+# Periodically check if the user's afk state (afk or not afk) has changed and adjust the time counter accordingly
 def idle_check():
     global idle_thread
-    global last_input_previous
     global last_time
+    global afk_state
 
-    last_input = win32api.GetLastInputInfo()
-    # Check the gap between the most recent input and the input immediately before it 
-    if (last_input - last_input_previous) / 1000.0 > AFK_TIMEOUT:
-        # If a gap in input exceeds our afk threshold, we "exclude" this gap by prematurely
-        # adding the time before the gap to the current application and moving the last_time
-        # pointer to the most recent input
-        time_before_afk = int(last_input_previous / 1000) - last_time
-        app_name = getAppName()
-        updateLog(time_log, app_name, last_window, time_before_afk)
-        last_time = int(win32api.GetTickCount() / 1000)
-        print("Welcome back! We decided you were afk after %d seconds of activity" % (time_before_afk))
-    last_input_previous = last_input
+    last_input = int(win32api.GetLastInputInfo() / 1000.0)
+    if isAFK(last_input):
+        # Did the state switch from not afk to afk?
+        if not afk_state:
+            afk_state = True
+            # Add the window usage time prior to state switch
+            usage_time = max(last_input - last_time, 0)
+            print("You've become afk after %d seconds" % (usage_time))
+            updateLog(time_log, getAppName(), last_window, usage_time)
+    else:
+        # Did the state switch from afk to not afk?
+        if afk_state:
+            afk_state = False
+            # Set the last_time pointer to the current time to "skip over" idle time
+            last_time = int(win32api.GetTickCount() / 1000)
+            print("Welcome back!")
     # Since we're here, we might as well check if this is the last update cycle before the date changes
     # and call onDateChange(). Code reformatting may be necessary
     # hour_minute = time.strftime('%H:%M')
@@ -77,26 +82,35 @@ idle_thread.start()
 
 def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
     global num_updates
+    global last_app
     global last_window
     global last_time
     length = user32.GetWindowTextLengthW(hwnd)
     buff = ctypes.create_unicode_buffer(length + 1)
     status = user32.GetWindowTextW(hwnd, buff, length + 1)
     name = buff.value
-    if name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()):
+    if not afk_state and name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()):
         new_time = int(win32api.GetTickCount() / 1000)
-        app_name = getAppName()
-        print(app_name)
         print(time.strftime('%X') + ' --> ' + name)
         if (last_time != 0):
             time_delta = new_time - last_time
-            updateLog(time_log, app_name, last_window, time_delta)
+            updateLog(time_log, last_app, last_window, time_delta)
             print(str(time_delta) + ' seconds have elapsed')
+        last_app = getAppName()
         last_time = new_time
         last_window = name
         if num_updates == 30: 
             onExit()
         num_updates += 1
+
+# Update the AFK state
+# Encapsulation is for the purpose of adding additional validation later, like if video is playing or not
+def isAFK(last_input):
+    current_time = int(win32api.GetTickCount() / 1000)
+    # print(current_time - last_input)
+    # print(AFK_TIMEOUT)
+    # Is the user afk?
+    return current_time - last_input > AFK_TIMEOUT
 
 def getAppName():
     _, processID = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
