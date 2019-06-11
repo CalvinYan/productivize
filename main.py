@@ -1,6 +1,8 @@
 # Original code graciously provided by Stack Overflow user David Hefferman
 
 import csv
+import json
+import os
 import sys
 import time
 import ctypes
@@ -10,8 +12,8 @@ from win32 import win32api, win32gui, win32process
 import win32con
 import psutil
 
-# Preferential constants
-AFK_TIMEOUT = 2 * 60 # How long in seconds the user must be inactive (no mouse/keyboard input) for the user to be considered afk
+# User settings
+settings = {}
 
 idle_thread = threading.Thread() # Thread to run the afk check
 afk_state = False # Has the system not received an input for longer than the timeout?
@@ -89,7 +91,7 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
     buff = ctypes.create_unicode_buffer(length + 1)
     status = user32.GetWindowTextW(hwnd, buff, length + 1)
     name = buff.value
-    if not afk_state and name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()):
+    if not afk_state and name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()) and getAppName() not in getSetting("appExclude", {}):
         new_time = int(win32api.GetTickCount() / 1000)
         print(time.strftime('%X') + ' --> ' + name)
         if (last_time != 0):
@@ -107,10 +109,8 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
 # Encapsulation is for the purpose of adding additional validation later, like if video is playing or not
 def isAFK(last_input):
     current_time = int(win32api.GetTickCount() / 1000)
-    # print(current_time - last_input)
-    # print(AFK_TIMEOUT)
     # Is the user afk?
-    return current_time - last_input > AFK_TIMEOUT
+    return current_time - last_input > getSetting("afkTimeoutSeconds", 120)
 
 def getAppName():
     _, processID = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
@@ -118,12 +118,13 @@ def getAppName():
     return app_name
 
 def readData(time_log):
+    path_string = os.getenv('LOCALAPPDATA') + '\\Productivize\\logs\\'
     date_string = time.strftime('%d-%m-%Y')
     # Python's default access modes don't allow us to open the file for reading, create it if it doesn't
     # exist, don't truncate it, and start from the top, so a combination of modes is required
-    with open(date_string + '.csv', "a") as dataFile: # Create if not exist
+    with open(path_string + date_string + '.csv', "a") as dataFile: # Create if not exist
         pass
-    with open(date_string + '.csv', "r", encoding = "utf-8") as dataFile: # Read, don't truncate, start from top
+    with open(path_string + date_string + '.csv', "r", encoding = "utf-8") as dataFile: # Read, don't truncate, start from top
         lines = csv.reader(dataFile)
         for line in lines:
             if len(line) > 0:
@@ -138,10 +139,21 @@ def writeData(time_log):
         for window_name, seconds in windows.items():
             log_list.append([app_name, window_name, str(seconds)])
     log_list = sorted(log_list, key = lambda app:(-int(app[2]), app[1], app[0]))
+    path_string = os.getenv('LOCALAPPDATA') + '\\Productivize\\logs\\'
     date_string = time.strftime('%d-%m-%Y')
-    with open(date_string + '.csv', 'w', newline = '', encoding = 'utf-8') as dataFile:
+    with open(path_string + date_string + '.csv', 'w', newline = '', encoding = 'utf-8') as dataFile:
         out = csv.writer(dataFile)
         out.writerows(log_list)
+
+# Retrieve and parse settings.json
+def readSettings():
+    path_string = os.getenv('LOCALAPPDATA') + '\\Productivize\\'
+    with open(path_string + 'settings.json', 'r') as settingsFile:
+        return json.loads(settingsFile.read())
+
+# Retrieve a value from the settings dictionary
+def getSetting(key, default):
+    return settings[key] if key in settings else default
 
 # Add the number of seconds spent on an application-window combination to its total duration, or add it if necessary
 def updateLog(time_log, app_name, window_name, seconds):
@@ -159,9 +171,10 @@ def onDateChange():
     last_input = int(win32api.GetLastInputInfo()/1000)
     current_time = int(win32api.GetTickCount() / 1000)
     # Account for the possibility of being in/recently out of afk
-    if current_time - last_time <= AFK_TIMEOUT:
+    afk_timeout_seconds = getSetting("afkTimeoutSeconds", 120)
+    if current_time - last_time <= afk_timeout_seconds:
         updateLog(time_log, last_window, current_time - last_time)
-    elif current_time - last_input <= AFK_TIMEOUT:
+    elif current_time - last_input <= afk_timeout_seconds:
         updateLog(time_log, last_window, current_time - last_input)
     writeData(time_log)
     time_log = {}
@@ -175,6 +188,8 @@ def onExit():
     quit()
 
 readData(time_log)
+
+settings = readSettings()
 
 # Set timer to call onDateChange on the last second of the day
 current_seconds = int(time.strftime("%H")) * 3600 + int(time.strftime("%M")) * 60 + int(time.strftime("%S"))
