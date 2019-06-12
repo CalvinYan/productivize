@@ -131,14 +131,32 @@ def readData(time_log):
                 [app_name, window_name, seconds] = line
                 updateLog(time_log, app_name, window_name, int(seconds))
 
-# Update the total record of time spent on each application-window combination
-def writeData(time_log):
+# Convert time_log dict to a list of each window sorted by decreasing usage tijme
+def sortDataByWindow(time_log):
     log_list = []
     # Convert dict to list
     for app_name, windows in time_log.items():
         for window_name, seconds in windows.items():
             log_list.append([app_name, window_name, str(seconds)])
     log_list = sorted(log_list, key = lambda app:(-int(app[2]), app[1], app[0]))
+    return log_list
+
+# Sort apps in time_log dict by decreasing usage time and then sort by window within each app
+def sortDataByApp(time_log):
+    app_list = []
+    # Convert dict to list
+    for app_name, windows in time_log.items():
+        # Extract a list of all windows run by the same application and sort the component windows
+        window_list = [[window_name, seconds] for window_name, seconds in windows.items()]
+        window_list = sorted(window_list, key = lambda window: (-window[1], window[0]))
+        app_list.append([app_name, window_list])
+    app_list = sorted(app_list, key = lambda app:sum([window[1] for window in app[1]]), reverse = True)
+    print(app_list)
+    # log_list = sorted(log_list, key = lambda app:(-int(app[2]), app[1], app[0]))
+
+# Update the total record of time spent on each application-window combination
+def writeData(time_log):
+    log_list = sortDataByWindow(time_log)
     path_string = os.getenv('LOCALAPPDATA') + '\\Productivize\\logs\\'
     date_string = time.strftime('%d-%m-%Y')
     with open(path_string + date_string + '.csv', 'w', newline = '', encoding = 'utf-8') as dataFile:
