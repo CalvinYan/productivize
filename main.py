@@ -11,13 +11,13 @@ import threading
 from win32 import win32api, win32gui, win32process
 import win32con
 import psutil
+import PySimpleGUI as sg
 
 # User settings
 settings = {}
 
 idle_thread = threading.Thread() # Thread to run the afk check
 afk_state = False # Has the system not received an input for longer than the timeout?
-last_input_previous = win32api.GetTickCount() # Previous value of GetLastInputInfo()
 
 # The number of seconds representing the last second of the day - used for end-of-day autosave
 LAST_SECOND = 23 * 3600 + 59 * 60 + 59
@@ -25,10 +25,9 @@ date_change_thread = threading.Thread()
 
 time_log = {} # The number of seconds spent on each window, using changes in window focus
 
-num_updates = 0
 last_app = '' # The name of the application used prior to window switch
-last_window = '' # The name of the recently unfocused window
-last_time = 0 # integer timestamp of the last change in focus
+last_window = win32gui.GetWindowText(win32gui.GetForegroundWindow()) # The name of the recently unfocused window
+last_time = int(win32api.GetTickCount() / 1000) # integer timestamp of the last change in focus
 
 user32 = ctypes.windll.user32
 ole32 = ctypes.windll.ole32
@@ -83,7 +82,6 @@ idle_thread = threading.Timer(0.1, idle_check)
 idle_thread.start()
 
 def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
-    global num_updates
     global last_app
     global last_window
     global last_time
@@ -101,9 +99,6 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
         last_app = getAppName()
         last_time = new_time
         last_window = name
-        if num_updates == 30: 
-            onExit()
-        num_updates += 1
 
 # Update the AFK state
 # Encapsulation is for the purpose of adding additional validation later, like if video is playing or not
@@ -200,14 +195,26 @@ def onDateChange():
 
 # All tasks that must be performed before the program closes
 def onExit():
+    # Save currently active window to log
+    if not afk_state:
+        seconds = int(win32api.GetTickCount() / 1000) - last_time
+        updateLog(time_log, last_app, last_window, seconds)
     writeData(time_log)
     idle_thread.cancel()
     date_change_thread.cancel()
+    print("Goodbye!")
     quit()
 
 readData(time_log)
 
 settings = readSettings()
+
+last_app = getAppName()
+
+data = sortDataByWindow(time_log)
+headings = ['Application Name', 'Window Name', 'Time Spent']
+window_layout = [[sg.Table(values=data, headings=headings, auto_size_columns=True, key='__data__')], [sg.Button(button_text='Update')]]
+window = sg.Window('Productivize').Layout(window_layout)
 
 # Set timer to call onDateChange on the last second of the day
 current_seconds = int(time.strftime("%H")) * 3600 + int(time.strftime("%M")) * 60 + int(time.strftime("%S"))
@@ -241,10 +248,16 @@ if hook_focus == 0 or hook_namechange == 0:
 
 msg = ctypes.wintypes.MSG()
 
-counter = 0
-while user32.GetMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
-    user32.TranslateMessageW(msg)
-    user32.DispatchMessageW(msg)
+while True:
+    event, values = window.Read()
+    if event == 'Update':
+        window.FindElement('__data__').Update(values = sortDataByWindow(time_log))
+    if event is None or event == 'Exit':
+        onExit()
+    print(event, values)
+    if user32.PeekMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
+        user32.TranslateMessageW(msg)
+        user32.DispatchMessageW(msg)
 
 user32.UnhookWinEvent(hook_focus)
 user32.UnhookWinEvent(hook_namechange)
