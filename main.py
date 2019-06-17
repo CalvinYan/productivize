@@ -99,6 +99,8 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
         last_app = getAppName()
         last_time = new_time
         last_window = name
+        # TCL can't display emojis so we need to clean up the window name
+        last_window = ''.join([letter for letter in name if ord(letter) < 65536])
 
 # Update the AFK state
 # Encapsulation is for the purpose of adding additional validation later, like if video is playing or not
@@ -108,9 +110,13 @@ def isAFK(last_input):
     return current_time - last_input > getSetting("afkTimeoutSeconds", 120)
 
 def getAppName():
-    _, processID = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
-    app_name = psutil.Process(processID).name()
-    return app_name
+    try:
+        _, processID = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
+        app_name = psutil.Process(processID).name()
+        return app_name
+    except NoSuchProcess:
+        return getAppName()
+    
 
 def readData(time_log):
     path_string = os.getenv('LOCALAPPDATA') + '\\Productivize\\logs\\'
@@ -180,15 +186,10 @@ def updateLog(time_log, app_name, window_name, seconds):
 # All tasks that must be performed before the date changes at 12:00 AM
 def onDateChange():
     global time_log
-    print("Yeetimus")
-    last_input = int(win32api.GetLastInputInfo()/1000)
-    current_time = int(win32api.GetTickCount() / 1000)
-    # Account for the possibility of being in/recently out of afk
-    afk_timeout_seconds = getSetting("afkTimeoutSeconds", 120)
-    if current_time - last_time <= afk_timeout_seconds:
-        updateLog(time_log, last_window, current_time - last_time)
-    elif current_time - last_input <= afk_timeout_seconds:
-        updateLog(time_log, last_window, current_time - last_input)
+    # Save currently active window to log
+    if not afk_state:
+        seconds = int(win32api.GetTickCount() / 1000) - last_time
+        updateLog(time_log, last_app, last_window, seconds)
     writeData(time_log)
     time_log = {}
 
@@ -256,7 +257,7 @@ while True:
         onExit()
     print(event, values)
     if user32.PeekMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
-        user32.TranslateMessageW(msg)
+        # user32.TranslateMessageW(msg)
         user32.DispatchMessageW(msg)
 
 user32.UnhookWinEvent(hook_focus)
