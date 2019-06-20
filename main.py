@@ -114,7 +114,7 @@ def getAppName():
         _, processID = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
         app_name = psutil.Process(processID).name()
         return app_name
-    except NoSuchProcess:
+    except:
         return getAppName()
     
 
@@ -133,17 +133,21 @@ def readData(time_log):
                 updateLog(time_log, app_name, window_name, int(seconds))
 
 # Convert time_log dict to a list of each window sorted by decreasing usage tijme
-def sortDataByWindow(time_log):
+def sortDataByWindow(time_log, display):
     log_list = []
     # Convert dict to list
     for app_name, windows in time_log.items():
         for window_name, seconds in windows.items():
-            log_list.append([app_name, window_name, str(seconds)])
+            log_list.append([app_name, window_name, seconds])
     log_list = sorted(log_list, key = lambda app:(-int(app[2]), app[1], app[0]))
+    # Pretty-format times and add additional data
+    if display:
+        time_sum = timeSum(time_log)
+        log_list = [[app_name, window_name, timeString(seconds), '%.2f%%' % (seconds/time_sum*100)] for app_name, window_name, seconds in log_list]
     return log_list
 
 # Sort apps in time_log dict by decreasing usage time and then sort by window within each app
-def sortDataByApp(time_log):
+def sortDataByApp(time_log, display):
     app_list = []
     # Convert dict to list
     for app_name, windows in time_log.items():
@@ -155,9 +159,29 @@ def sortDataByApp(time_log):
     print(app_list)
     # log_list = sorted(log_list, key = lambda app:(-int(app[2]), app[1], app[0]))
 
+# Convert seconds to hours, minutes, seconds for GUI display
+def timeString(seconds):
+    time_string = ''
+    hours = int(seconds / 3600)
+    minutes = int(seconds % 3600 / 60)
+    seconds = seconds % 60
+    if hours > 0:
+        time_string = f'{hours}h {minutes}m {seconds}s'
+    elif minutes > 0:
+        time_string = f'{minutes}m {seconds}s'
+    else:
+        time_string = f'{seconds}s'
+    return time_string
+        
+def timeSum(time_log):
+    time_sum = 0
+    for app_name, windows in time_log.items():
+        time_sum += sum([seconds for _, seconds in windows.items()])
+    return max(time_sum, 1) # Avoid div by 0
+
 # Update the total record of time spent on each application-window combination
 def writeData(time_log):
-    log_list = sortDataByWindow(time_log)
+    log_list = sortDataByWindow(time_log, display=False)
     path_string = os.getenv('LOCALAPPDATA') + '\\Productivize\\logs\\'
     date_string = time.strftime('%d-%m-%Y')
     with open(path_string + date_string + '.csv', 'w', newline = '', encoding = 'utf-8') as dataFile:
@@ -193,6 +217,24 @@ def onDateChange():
     writeData(time_log)
     time_log = {}
 
+# Modify sg display elements to reflect changes in time_log
+def updateDisplay(window, time_log):
+    # Might want to think of a way to get values and time_sum in one function call
+    values = sortDataByWindow(time_log, display=True)
+    time_sum = timeSum(time_log)
+    window.FindElement('__data__').Update(values)
+    window.FindElement('__time_sum__').Update(f'Total: {timeString(time_sum)}')
+    window.FindElement('__time_subtotal__').Update('Subtotal: 0s')
+
+# Modify displayed time subtotal only. Separate from updateDisplay since we need the table to remain unchanged as we read it
+def updateSubtotal(selected_rows):
+    print(selected_rows)
+    data = sortDataByWindow(time_log, display=False)
+    # Extract corresponding rows
+    selected_data = [data[row] for row in selected_rows]
+    subtotal = sum([seconds for _, _, seconds in selected_data])
+    print("Subtotal:", subtotal)
+    window.FindElement('__time_subtotal__').Update(f'Subtotal: {timeString(subtotal)}')
 
 # All tasks that must be performed before the program closes
 def onExit():
@@ -212,9 +254,10 @@ settings = readSettings()
 
 last_app = getAppName()
 
-data = sortDataByWindow(time_log)
-headings = ['Application Name', 'Window Name', 'Time Spent']
-window_layout = [[sg.Table(values=data, headings=headings, auto_size_columns=True, key='__data__')], [sg.Button(button_text='Update')]]
+data = sortDataByWindow(time_log, display=True)
+time_sum = timeSum(time_log)
+headings = ['Application Name', 'Window Name', 'Time Spent', 'Percent Share']
+window_layout = [[sg.Table(values=data, headings=headings, auto_size_columns=True, max_col_width = 50, num_rows = 20, enable_events = True, key='__data__')], [sg.Text(f'Total: {timeString(time_sum)}', auto_size_text=False, key='__time_sum__'), sg.Text('Subtotal: 0s', auto_size_text=False, key='__time_subtotal__')], [sg.Button(button_text='Update'), sg.Button(button_text='Clear')]]
 window = sg.Window('Productivize').Layout(window_layout)
 
 # Set timer to call onDateChange on the last second of the day
@@ -252,7 +295,15 @@ msg = ctypes.wintypes.MSG()
 while True:
     event, values = window.Read()
     if event == 'Update':
-        window.FindElement('__data__').Update(values = sortDataByWindow(time_log))
+        updateDisplay(window, time_log)
+    if event == 'Clear':
+        time_log = {}
+        last_time = int(win32api.GetTickCount() / 1000)
+        updateDisplay(window, time_log)
+    if event == '__data__':
+        selected_rows = values['__data__']
+        # Calculate new time subtotal
+        updateSubtotal(selected_rows)
     if event is None or event == 'Exit':
         onExit()
     print(event, values)
