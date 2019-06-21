@@ -13,6 +13,9 @@ import win32con
 import psutil
 import PySimpleGUI as sg
 
+# The productivize display window
+window = None
+
 # User settings
 settings = {}
 
@@ -217,12 +220,16 @@ def updateLog(time_log, app_name, window_name, seconds):
 # All tasks that must be performed before the date changes at 12:00 AM
 def onDateChange():
     global time_log
+    global last_time
     # Save currently active window to log
     if not afk_state:
         seconds = int(win32api.GetTickCount() / 1000) - last_time
         updateLog(time_log, last_app, last_window, seconds)
     writeData(time_log)
     time_log = {}
+    updateDisplay(window,time_log)
+    # Reset timer
+    last_time = int(win32api.GetTickCount() / 1000)
 
 # Modify sg display elements to reflect changes in time_log
 def updateDisplay(window, time_log):
