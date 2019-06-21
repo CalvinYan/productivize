@@ -89,14 +89,15 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
     buff = ctypes.create_unicode_buffer(length + 1)
     status = user32.GetWindowTextW(hwnd, buff, length + 1)
     name = buff.value
-    if not afk_state and name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()) and getAppName() not in getSetting("appExclude", {}):
+    app_name = getAppName()
+    if not afk_state and name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()) and app_name not in getSetting("appExclude", {}):
         new_time = int(win32api.GetTickCount() / 1000)
         print(time.strftime('%X') + ' --> ' + name)
         if (last_time != 0):
             time_delta = new_time - last_time
             updateLog(time_log, last_app, last_window, time_delta)
             print(str(time_delta) + ' seconds have elapsed')
-        last_app = getAppName()
+        last_app = app_name
         last_time = new_time
         last_window = name
         # TCL can't display emojis so we need to clean up the window name
@@ -110,8 +111,14 @@ def isAFK(last_input):
     return current_time - last_input > getSetting("afkTimeoutSeconds", 120)
 
 def getAppName():
+    global afk_state
     try:
         _, processID = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
+        if processID < 0: 
+            # This tends to happen if the computer is going to sleep, so afk is safe to assume -- 
+            # even it it's some other reason, the afk will be undone too quickly to do damage
+            afk_state = True
+            return None
         app_name = psutil.Process(processID).name()
         return app_name
     except:
@@ -255,6 +262,9 @@ settings = readSettings()
 last_app = getAppName()
 
 data = sortDataByWindow(time_log, display=True)
+if (len(data) == 0):
+    # SimpleGUI's table doesn't like to be empty initially so add a placeholder
+    data = [['python3.exe', 'Productivize', '0s']]
 time_sum = timeSum(time_log)
 headings = ['Application Name', 'Window Name', 'Time Spent', 'Percent Share']
 window_layout = [[sg.Table(values=data, headings=headings, auto_size_columns=True, max_col_width = 50, num_rows = 20, enable_events = True, key='__data__')], [sg.Text(f'Total: {timeString(time_sum)}', auto_size_text=False, key='__time_sum__'), sg.Text('Subtotal: 0s', auto_size_text=False, key='__time_subtotal__')], [sg.Button(button_text='Update'), sg.Button(button_text='Clear')]]
