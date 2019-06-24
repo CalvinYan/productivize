@@ -29,6 +29,7 @@ date_change_thread = threading.Thread()
 
 time_log = {} # The number of seconds spent on each window, using changes in window focus
 
+# State variables
 last_app = '' # The name of the application used prior to window switch
 last_window = win32gui.GetWindowText(win32gui.GetForegroundWindow()) # The name of the recently unfocused window
 last_time = int(win32api.GetTickCount() / 1000) # integer timestamp of the last change in focus
@@ -67,7 +68,7 @@ def idle_check():
             # Add the window usage time prior to state switch
             usage_time = max(last_input - last_time, 0)
             print("You've become afk after %d seconds" % (usage_time))
-            updateLog(time_log, getAppName(), last_window, usage_time)
+            updateLog(time_log, last_app, last_window, usage_time)
     else:
         # Did the state switch from afk to not afk?
         if afk_state:
@@ -240,6 +241,12 @@ def onDateChange():
 
 # Modify sg display elements to reflect changes in time_log
 def updateDisplay(window, time_log):
+    global last_time
+    # Save currently active window to log
+    if not afk_state:
+        seconds = int(win32api.GetTickCount() / 1000) - last_time
+        updateLog(time_log, last_app, last_window, seconds)
+        last_time += seconds
     # Might want to think of a way to get values and time_sum in one function call
     values, time_sum = sortDataByWindow(time_log, display=True, compute_sum=True)
     window.FindElement('__data__').Update(values)
