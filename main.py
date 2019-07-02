@@ -23,9 +23,8 @@ settings = {}
 idle_thread = threading.Thread() # Thread to run the afk check
 afk_state = False # Has the system not received an input for longer than the timeout?
 
-# The number of seconds representing the last second of the day - used for end-of-day autosave
-LAST_SECOND = 23 * 3600 + 59 * 60 + 59
-date_change_thread = threading.Thread()
+# The day of the month at runtime start - used for end-of-day autosave
+current_date = time.strftime('%d')
 
 time_log = {} # The number of seconds spent on each window, using changes in window focus
 
@@ -76,12 +75,9 @@ def idle_check():
             # Set the last_time pointer to the current time to "skip over" idle time
             last_time = int(win32api.GetTickCount() / 1000)
             print("Welcome back!")
-    # Since we're here, we might as well check if this is the last update cycle before the date changes
-    # and call onDateChange(). Code reformatting may be necessary
-    # hour_minute = time.strftime('%H:%M')
-    # num_seconds = int(time.strftime('%S'))
-    # if hour_minute == "23:59" and num_seconds + 10.0 >= 60:
-    #     onDateChange(time_log, last_window, last_time, last_input)
+    # Since we're here, we might as well check if the date has changed and and call onDateChange()
+    if time.strftime('%d') != current_date:
+        onDateChange()
     # Restart the timer for another update cycle
     idle_thread = threading.Timer(0.1, idle_check)
     idle_thread.start()
@@ -114,6 +110,10 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
 # Update the AFK state
 # Encapsulation is for the purpose of adding additional validation later, like if video is playing or not
 def isAFK(last_input):
+    # Does current window contain an afk-exluded keyword, like "YouTube"?
+    for keyword in getSetting('afkExclude', []):
+        if containsIgnoreCase(last_window, keyword):
+            return False
     current_time = int(win32api.GetTickCount() / 1000)
     # Is the user afk?
     return current_time - last_input > getSetting("afkTimeoutSeconds", 120)
@@ -229,15 +229,17 @@ def updateLog(time_log, app_name, window_name, seconds):
 def onDateChange():
     global time_log
     global last_time
+    global current_date
     # Save currently active window to log
     if not afk_state:
         seconds = int(win32api.GetTickCount() / 1000) - last_time
         updateLog(time_log, last_app, last_window, seconds)
     writeData(time_log)
     time_log = {}
-    updateDisplay(window,time_log)
-    # Reset timer
+    # Reset date, timer
+    current_date = time.strftime('%d')
     last_time = int(win32api.GetTickCount() / 1000)
+    updateDisplay(window,time_log)
 
 # Modify sg display elements to reflect changes in time_log
 def updateDisplay(window, time_log):
@@ -271,7 +273,6 @@ def onExit():
         updateLog(time_log, last_app, last_window, seconds)
     writeData(time_log)
     idle_thread.cancel()
-    date_change_thread.cancel()
     print("Goodbye!")
     quit()
 
@@ -289,10 +290,6 @@ headings = ['Application Name', 'Window Name', 'Time Spent', 'Percent Share']
 window_layout = [[sg.Table(values=data, headings=headings, auto_size_columns=True, max_col_width = 50, num_rows = 20, enable_events = True, key='__data__')], [sg.Text(f'Total: {timeString(time_sum)}', auto_size_text=False, key='__time_sum__'), sg.Text('Subtotal: 0s', auto_size_text=False, key='__time_subtotal__')], [sg.Button(button_text='Update'), sg.Button(button_text='Clear'), sg.Text('Window name filter:'), sg.Input(do_not_clear=True, key='__filter__'), sg.Button(button_text='Filter'), sg.Button(button_text='Reset Filter')]]
 window = sg.Window('Productivize').Layout(window_layout)
 
-# Set timer to call onDateChange on the last second of the day
-current_seconds = int(time.strftime("%H")) * 3600 + int(time.strftime("%M")) * 60 + int(time.strftime("%S"))
-date_change_thread = threading.Timer(LAST_SECOND - current_seconds, onDateChange)
-date_change_thread.start()
 WinEventProc = WinEventProcType(callback)
 
 user32.SetWinEventHook.restype = ctypes.wintypes.HANDLE
