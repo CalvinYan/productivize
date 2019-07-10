@@ -201,7 +201,7 @@ def timeString(seconds):
 def writeData(time_log):
     log_list = sortDataByWindow(time_log, display=False, filter=False)
     path_string = os.getenv('LOCALAPPDATA') + '\\Productivize\\logs\\'
-    date_string = time.strftime('%d-%m-%Y')
+    date_string = ('%02d' % int(current_date)) + time.strftime('-%m-%Y')
     with open(path_string + date_string + '.csv', 'w', newline = '', encoding = 'utf-8') as dataFile:
         out = csv.writer(dataFile)
         out.writerows(log_list)
