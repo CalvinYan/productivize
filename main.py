@@ -32,6 +32,7 @@ time_log = {} # The number of seconds spent on each window, using changes in win
 last_app = '' # The name of the application used prior to window switch
 last_window = win32gui.GetWindowText(win32gui.GetForegroundWindow()) # The name of the recently unfocused window
 last_time = int(win32api.GetTickCount() / 1000) # integer timestamp of the last change in focus
+last_autosave = last_time
 
 # The word(s) used to filter the table's contents
 window_filter = ''
@@ -57,8 +58,10 @@ WinEventProcType = ctypes.WINFUNCTYPE(
 def idle_check():
     global idle_thread
     global last_time
+    global last_autosave
     global afk_state
-
+    
+    current_time = int(win32api.GetTickCount() / 1000)
     last_input = int(win32api.GetLastInputInfo() / 1000.0)
     if isAFK(last_input):
         # Did the state switch from not afk to afk?
@@ -73,10 +76,16 @@ def idle_check():
         if afk_state:
             afk_state = False
             # Set the last_time pointer to the current time to "skip over" idle time
-            last_time = int(win32api.GetTickCount() / 1000)
+            last_time = current_time
             print("Welcome back!")
-    # Since we're here, we might as well check if the date has changed and and call onDateChange()
-    if time.strftime('%d') != current_date:
+    # Autosave check
+    if current_time - last_autosave > getSetting('autoSaveFrequencySeconds', 300):
+        saveCurrentWindowToLog()
+        writeData(time_log)
+        last_autosave = current_time 
+    # Check if the date has changed and the time has exceeded a user-set threshold. This threshold ensures
+    # that those who like to burn the midnight oil don't see their data reset before they go to sleep 
+    if time.strftime('%d') != current_date and time.strftime('%X') > getSetting('dayResetTime', '00:00:00'):
         onDateChange()
     # Restart the timer for another update cycle
     idle_thread = threading.Timer(0.1, idle_check)
@@ -97,10 +106,8 @@ def callback(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsE
     if not afk_state and name != '' and name != last_window and name == win32gui.GetWindowText(win32gui.GetForegroundWindow()) and app_name not in getSetting("appExclude", {}):
         new_time = int(win32api.GetTickCount() / 1000)
         print(time.strftime('%X') + ' --> ' + name)
-        if (last_time != 0):
-            time_delta = new_time - last_time
-            updateLog(time_log, last_app, last_window, time_delta)
-            print(str(time_delta) + ' seconds have elapsed')
+        saveCurrentWindowToLog()
+        # Update state variables
         last_app = app_name
         last_time = new_time
         last_window = name
@@ -231,9 +238,7 @@ def onDateChange():
     global last_time
     global current_date
     # Save currently active window to log
-    if not afk_state:
-        seconds = int(win32api.GetTickCount() / 1000) - last_time
-        updateLog(time_log, last_app, last_window, seconds)
+    saveCurrentWindowToLog()
     writeData(time_log)
     time_log = {}
     # Reset date, timer
@@ -241,15 +246,20 @@ def onDateChange():
     last_time = int(win32api.GetTickCount() / 1000)
     updateDisplay(window,time_log)
 
-# Modify sg display elements to reflect changes in time_log
-def updateDisplay(window, time_log):
+def saveCurrentWindowToLog():
     global last_time
-    # Save currently active window to log
     if not afk_state:
         seconds = int(win32api.GetTickCount() / 1000) - last_time
         updateLog(time_log, last_app, last_window, seconds)
         last_time += seconds
-    # Might want to think of a way to get values and time_sum in one function call
+    
+
+# Modify sg display elements to reflect changes in time_log
+def updateDisplay(window, time_log):
+    global last_time
+    # Save currently active window to log
+    saveCurrentWindowToLog()
+    # Update window elements
     values, time_sum = sortDataByWindow(time_log, display=True, compute_sum=True)
     window.FindElement('__data__').Update(values)
     window.FindElement('__time_sum__').Update(f'Total: {timeString(time_sum)}')
@@ -268,9 +278,7 @@ def updateSubtotal(selected_rows):
 # All tasks that must be performed before the program closes
 def onExit():
     # Save currently active window to log
-    if not afk_state:
-        seconds = int(win32api.GetTickCount() / 1000) - last_time
-        updateLog(time_log, last_app, last_window, seconds)
+    saveCurrentWindowToLog()
     writeData(time_log)
     idle_thread.cancel()
     print("Goodbye!")
