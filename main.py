@@ -154,13 +154,14 @@ def readData(time_log):
 
 # Convert time_log dict to a list of each window sorted by decreasing usage time
 def sortDataByWindow(time_log, display, compute_sum=False, filter=True):
+    filters = window_filter.split(' ') if filter else []
     log_list = []
     time_sum = 0
     # Convert dict to list
     for app_name, windows in time_log.items():
         for window_name, seconds in windows.items():
             # Apply window name filter
-            if not filter or window_filter == '' or containsIgnoreCase(window_name, window_filter):
+            if not filter or window_filter == '' or isFilterMatch(window_name, filters):
                 log_list.append([app_name, window_name, seconds])
                 time_sum += seconds
     log_list = sorted(log_list, key = lambda app:(-int(app[2]), app[1], app[0]))
@@ -186,6 +187,13 @@ def sortDataByApp(time_log, display):
 def NKFD(string):
     # Two calls to normalize is necessary for corner cases apparently
     return unicodedata.normalize('NFKD', unicodedata.normalize('NFKD', string).casefold())
+
+# Compare target string with a list of filters
+def isFilterMatch(window_name, filters):
+    for filter in filters:
+        if containsIgnoreCase(window_name, filter):
+            return True
+    return False
 
 def containsIgnoreCase(string, substring):
     return NKFD(substring) in NKFD(string)
@@ -227,7 +235,7 @@ def getSetting(key, default):
 def updateLog(time_log, app_name, window_name, seconds):
     if app_name in time_log:
         current_value = time_log[app_name][window_name] if window_name in time_log[app_name] else 0
-        time_log[app_name][window_name] = current_value + seconds
+        if current_value + seconds > 0: time_log[app_name][window_name] = current_value + seconds
     else:
         # Create a new dictionary corresponsing to the application in question      
         time_log[app_name] = {window_name: seconds}
